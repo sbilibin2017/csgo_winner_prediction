@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+
+  app:
+    build:
+      context: ./app/src
+      dockerfile: Dockerfile.dev
+    env_file:
+      - ./.env
+    volumes:
+      - ./env:/env
+      - ./.env:/.env
+    networks:
+      - mongo_network
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:latest
+    ports:
+      - 27017:27017
+    env_file:
+      - ./.env
+    volumes:
+      - games:/data/db
+      - ./env:/env
+      - ./.env:/.env
+    networks:
+      - mongo_network
+
+volumes:
+  games:
+
+
+networks:
+  mongo_network:
+    name: mongo_network
