@@ -1,0 +1,46 @@
+version: '3'
+
+services:
+
+  app:
+    build:
+      context: ./app/src
+      dockerfile: Dockerfile.dev
+    env_file:
+      - ./.env
+    volumes:
+      - ./env:/env
+      - ./.env:/.env
+    networks:
+      - mongo_network
+    depends_on:
+      - clickhouse_server
+      - clickhouse_client
+
+  clickhouse_server:
+    image: yandex/clickhouse-server
+    ports:
+      - 8123:8123
+      - 9000:9000
+    volumes:
+      - clickhouse_volume:/var/lib/clickhouse
+    networks:
+      - mongo_network
+
+  clickhouse_client:
+    image: yandex/clickhouse-client
+    entrypoint:
+      - /bin/sleep
+    command:
+      - infinity
+    networks:
+      - mongo_network
+
+volumes:
+  clickhouse_volume:
+
+
+networks:
+  mongo_network:
+    external:
+      name: mongo_network
