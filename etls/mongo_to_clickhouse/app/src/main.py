@@ -8,6 +8,7 @@ import pymongo
 from clickhouse_driver import Client
 from core.config import config
 from core.logger import logger
+from dateutil import parser
 from tqdm import tqdm
 
 
@@ -48,7 +49,7 @@ def get_game_profile(game) -> pd.DataFrame:
         mask_round_min = df_rounds['round'].min()==1
         mask_round_max = df_rounds['round'].max()>=16
         mask_round_diff_nunique = df_rounds['round'].diff().dropna().nunique()==1
-        if mask_map&mask_team&mask_player&mask_round_min&mask_round_max&mask_round_diff_nunique:
+        if mask_map & mask_team & mask_player & mask_round_min & mask_round_max & mask_round_diff_nunique:
             total_rounds = df_rounds['round'].max()
             start_ct_id = df_rounds.query('round==1')['ct'].iloc[0]
             winner_id = df_rounds['winner_team'].value_counts().idxmax()
@@ -87,24 +88,18 @@ def get_game_profile(game) -> pd.DataFrame:
                     d[f'h1_{outcome}_count'] = count
                 for outcome, count in d_h2_outcome_count.items():
                     d[f'h2_{outcome}_count'] = count
-                d['win'] = int(winner_id==d['t_id'])   
-                for k,v in d.items():
-                    try:
-                        d[k] = float(v)
-                    except:
-                        d[k] = str(v)
+                d['win'] = int(winner_id==d['t_id'])
                 rows.append(d)
                 del d
             subdf = pd.DataFrame.from_records(rows)
             del rows
             for key in PROFILE_KEYS:
                 if key not in subdf.columns:
-                    subdf[key] = 0.0
-                else:
-                    try:
-                        subdf[key]=subdf[key].fillna(0.0).astype('float')
-                    except:
-                        subdf[key]=subdf[key].fillna(0.0).astype('str')                        
+                    subdf[key] = 0.0  
+            subdf['date'] = pd.to_datetime(subdf['date'], utc=True)
+            for key in ['tier', 't_loc', 'p_nat', 'p_ht']:
+                subdf[key] = subdf[key].fillna('default')
+            subdf.fillna(0.0, inplace=True)            
             return subdf[PROFILE_KEYS]
     except:
         pass
@@ -118,11 +113,11 @@ def main():
         clickhouse_client.execute(
             """
             CREATE TABLE IF NOT EXISTS profile(
-                id Integer, date DateTime, timestamp Float32, year Float32, month Float32, year_month Float32, day Float32,
-                weekday Float32, hour Float32, map_id Float32, tier Float32, t_id Float32, t_loc String, t_opp_id Float32,
+                id Float32, date DateTime, timestamp Float32, year Float32, month Float32, year_month Float32, day Float32,
+                weekday Float32, hour Float32, map_id Float32, tier String, t_id Float32, t_loc String, t_opp_id Float32,
                 p_id Float32, p_nat String, p_ht String, adr Float32, assists Float32, deaths Float32, first_kills_diff Float32,
                 flash_assists Float32, headshots Float32, k_d_diff Float32, kast Float32, kills Float32, rating Float32,
-                total_rounds Float32, start_ct Float32, map_id_start_ct Float32, h1_win_count Float32,
+                total_rounds Float32, start_ct Float32, map_id_start_ct String, h1_win_count Float32,
                 h2_win_count Float32, r1_win Float32, r2_win Float32, r16_win Float32, r17_win Float32,
                 h1_eliminated_count Float32, h1_timeout_count Float32, h1_exploded_count Float32, h1_defused_count Float32,
                 h2_eliminated_count Float32, h2_timeout_count Float32, h2_exploded_count Float32, h2_defused_count Float32,
@@ -137,6 +132,8 @@ def main():
                 df_profile = get_game_profile(game)
                 if df_profile is not None:                
                     clickhouse_client.execute("INSERT INTO profile VALUES", df_profile.to_dict('records'))
+                    count = clickhouse_client.execute("SELECT count(distinct(id)) FROM profile")[0][0]
+                    logger.info(f'count: {count}')
                     del df_profile
     except Exception as e:
         logger.error(e)
